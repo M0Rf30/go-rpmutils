@@ -125,6 +125,13 @@ func (cs *CpioStream) readStrippedEntry(hdr *Cpio_newc_header) (*CpioEntry, erro
 		return nil, fmt.Errorf("stripped cpio refers to invalid file index %d", hdr.index)
 	}
 	size := cs.sizes[hdr.index]
+	// rpm pads the 14-byte stripped header to a 4-byte boundary before the
+	// file content (rpmcpioStrippedHeaderRead in rpm's lib/cpio.c)
+	if skip := pad64(cs.stream.curPos) - cs.stream.curPos; skip > 0 {
+		if _, err := cs.stream.Seek(skip, 1); err != nil {
+			return nil, err
+		}
+	}
 	cs.nextPos = pad64(cs.stream.curPos + size)
 	payload, err := newFileStream(cs.stream, size)
 	if err != nil {

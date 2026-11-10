@@ -19,6 +19,10 @@ package rpmutils
 import (
 	"bytes"
 	"crypto"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"os"
@@ -104,7 +108,39 @@ func getSha256(sigHeader *rpmHeader) string {
 	return vals[0]
 }
 
+func getSha3_256(sigHeader *rpmHeader) string {
+	vals, err := sigHeader.GetStrings(SIG_SHA3_256)
+	if err != nil {
+		return ""
+	}
+	return vals[0]
+}
+
+// readGeneralHeader reads the general header and checks it against the
+// digests in the signature header. The strongest digest is checked while
+// reading and, if both are present, the SHA256 digest is checked as well.
+func readGeneralHeader(f io.Reader, sigHeader *rpmHeader) (*rpmHeader, error) {
+	value, hashType := getHashAndType(sigHeader)
+	genHeader, err := readHeader(f, value, hashType, sigHeader.isSource, false)
+	if err != nil {
+		return nil, err
+	}
+	if hashType == crypto.SHA3_256 {
+		if want := getSha256(sigHeader); want != "" {
+			sum := sha256.Sum256(genHeader.orig)
+			if hex.EncodeToString(sum[:]) != want {
+				return nil, fmt.Errorf("%s mismatch in signature header", crypto.SHA256)
+			}
+		}
+	}
+	return genHeader, nil
+}
+
 func getHashAndType(sigHeader *rpmHeader) (string, crypto.Hash) {
+	// RPM v6 added SHA3-256, prefer it over everything else
+	if h := getSha3_256(sigHeader); h != "" {
+		return h, crypto.SHA3_256
+	}
 	// RPM v4 introduced SHA256 header signatures, prefer them over the
 	// previous SHA1
 	if h := getSha256(sigHeader); h != "" {
@@ -130,10 +166,14 @@ func SignRpmStream(stream io.Reader, key *packet.PrivateKey, opts *SignatureOpti
 		return nil, err
 	}
 	// parse the general header
-	headerDigestValue, headerDigestType := getHashAndType(sigHeader)
-	genHeader, err := readHeader(stream, headerDigestValue, headerDigestType, sigHeader.isSource, false)
+	genHeader, err := readGeneralHeader(stream, sigHeader)
 	if err != nil {
 		return nil, err
+	}
+	if genHeader.HasTag(RPMFORMAT) {
+		if format, err := genHeader.GetUint32s(RPMFORMAT); err == nil && len(format) == 1 && format[0] >= 6 {
+			return nil, errors.New("signing RPM v6 packages is not supported")
+		}
 	}
 	// hash and sign header
 	genHash, combinedHash, err := digestForSigning(sigHeader, genHeader, stream, opts)
@@ -159,6 +199,19 @@ func SignRpmStream(stream io.Reader, key *packet.PrivateKey, opts *SignatureOpti
 }
 
 func getPayloadDigest(header *rpmHeader) (string, crypto.Hash) {
+	// RPM v6 stores digests of the compressed payload in dedicated tags;
+	// prefer the strongest one available.
+	for _, c := range []struct {
+		tag  int
+		hash crypto.Hash
+	}{
+		{PAYLOADSHA3_256, crypto.SHA3_256},
+		{PAYLOADSHA512, crypto.SHA512},
+	} {
+		if vals, err := header.GetStrings(c.tag); err == nil && len(vals) > 0 && vals[0] != "" {
+			return vals[0], c.hash
+		}
+	}
 	digests, err := header.GetStrings(PAYLOADDIGEST)
 	if err != nil || len(digests) == 0 {
 		// no payload digest
@@ -166,7 +219,13 @@ func getPayloadDigest(header *rpmHeader) (string, crypto.Hash) {
 	}
 	digest := digests[0]
 	algos, err := header.GetUint32s(PAYLOADDIGESTALGO)
-	if err != nil || len(algos) == 0 {
+	if err != nil {
+		if _, ok := err.(NoSuchTagError); ok {
+			// RPM v6 omits the algorithm tag, the digest is always SHA256
+			return digest, crypto.SHA256
+		}
+		return "", 0
+	} else if len(algos) == 0 {
 		return "", 0
 	}
 	switch algos[0] {

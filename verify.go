@@ -61,8 +61,7 @@ func Verify(stream io.Reader, knownKeys openpgp.EntityList) (header *RpmHeader, 
 		return nil, nil, err
 	}
 	// parse the general header
-	headerDigestValue, headerDigestType := getHashAndType(sigHeader)
-	genHeader, err := readHeader(stream, headerDigestValue, headerDigestType, sigHeader.isSource, false)
+	genHeader, err := readGeneralHeader(stream, sigHeader)
 	if err != nil {
 		return nil, nil, err
 	}

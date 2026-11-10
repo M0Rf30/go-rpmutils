@@ -30,19 +30,21 @@ func TestReadStripped(t *testing.T) {
 	}
 	defer f.Close()
 	r := NewReaderWithSizes(iotest.HalfReader(f), []int64{3, 6})
-	h, err := r.Next()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !h.IsStripped() || h.Index() != 0 {
-		t.Fatalf("wrong header: %#v", h)
-	}
-	h, err = r.Next()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !h.IsStripped() || h.Index() != 1 {
-		t.Fatalf("wrong header: %#v", h)
+	for i, want := range []string{"foo", "foobar"} {
+		h, err := r.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !h.IsStripped() || h.Index() != i {
+			t.Fatalf("wrong header: %#v", h)
+		}
+		got, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Fatalf("entry %d: got %q want %q", i, got, want)
+		}
 	}
 	_, err = r.Next()
 	if err != io.EOF {

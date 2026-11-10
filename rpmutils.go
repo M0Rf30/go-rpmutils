@@ -100,8 +100,7 @@ func ReadHeader(f io.Reader) (*RpmHeader, error) {
 		return nil, err
 	}
 
-	hash, hashType := getHashAndType(sigHeader)
-	genHeader, err := readHeader(f, hash, hashType, sigHeader.isSource, false)
+	genHeader, err := readGeneralHeader(f, sigHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -309,6 +308,16 @@ func (hdr *RpmHeader) InstalledSize() (int64, error) {
 
 // PayloadSize returns the size of the uncompressed payload in bytes
 func (hdr *RpmHeader) PayloadSize() (int64, error) {
+	if hdr.genHeader.HasTag(PAYLOADSIZEALT) {
+		// RPM v6 keeps payload sizes in the general header
+		u, err := hdr.genHeader.GetUint64s(PAYLOADSIZEALT)
+		if err != nil {
+			return -1, err
+		} else if len(u) != 1 {
+			return -1, errors.New("incorrect number of values")
+		}
+		return int64(u[0]), nil
+	}
 	u, err := hdr.sigHeader.GetUint64Fallback(SIG_PAYLOADSIZE-_SIGHEADER_TAG_BASE, SIG_LONGARCHIVESIZE)
 	if err != nil {
 		return -1, err
@@ -316,6 +325,15 @@ func (hdr *RpmHeader) PayloadSize() (int64, error) {
 		return -1, errors.New("incorrect number of values")
 	}
 	return int64(u[0]), err
+}
+
+// Format returns the RPM package format version: the value of the RPMFORMAT
+// tag, or 4 if absent (RPM v4 packages).
+func (hdr *RpmHeader) Format() int {
+	if vals, err := hdr.genHeader.GetUint32s(RPMFORMAT); err == nil && len(vals) == 1 {
+		return int(vals[0])
+	}
+	return 4
 }
 
 // IsSource return isSource

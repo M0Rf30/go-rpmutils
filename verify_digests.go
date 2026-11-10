@@ -3,6 +3,7 @@ package rpmutils
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"io"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	_ "golang.org/x/crypto/sha3" // registers crypto.SHA3_256
 )
 
 var headerSigTags = []int{SIG_RSA, SIG_DSA}
@@ -30,12 +32,50 @@ func setupDigester(sigHeader *rpmHeader, tag int, knownKeys openpgp.EntityList) 
 	return parseSignature(blob, knownKeys)
 }
 
+// Parse the RPM v6 OPENPGP signature array. Each element is a base64 encoded
+// binary OpenPGP signature over the general header.
+func setupOpenPGPDigesters(sigHeader, genHeader *rpmHeader, knownKeys openpgp.EntityList) ([]*Signature, []hash.Hash, error) {
+	encoded, err := sigHeader.GetStrings(SIG_OPENPGP)
+	if err != nil {
+		return nil, nil, err
+	}
+	var sigs []*Signature
+	var hashes []hash.Hash
+	for _, e := range encoded {
+		blob, err := base64.StdEncoding.DecodeString(e)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid OpenPGP signature encoding: %w", err)
+		}
+		sig, err := parseSignature(blob, knownKeys)
+		if err != nil {
+			return nil, nil, err
+		}
+		sig.HeaderOnly = true
+		h := sig.Hash.New()
+		h.Write(genHeader.orig)
+		sigs = append(sigs, sig)
+		hashes = append(hashes, h)
+	}
+	return sigs, hashes, nil
+}
+
 // Parse signatures from the header and determine which hash functions are
 // needed to digest the RPM. The caller must write the payload to the returned
 // WriteCloser, then call Close to check if the payload digest matches.
 func digestAndVerify(sigHeader, genHeader *rpmHeader, payloadReader io.Reader, knownKeys openpgp.EntityList) ([]*Signature, []hash.Hash, error) {
 	var sigs []*Signature
 	var hashes []hash.Hash
+	// RPM v6 signatures: base64 OpenPGP packets over the general header alone.
+	// When present they supersede the legacy signature tags.
+	if sigHeader.HasTag(SIG_OPENPGP) {
+		var err error
+		sigs, hashes, err = setupOpenPGPDigesters(sigHeader, genHeader, knownKeys)
+		if err != nil {
+			return nil, nil, err
+		}
+		err = digestPayload(sigHeader, genHeader, payloadReader, nil)
+		return sigs, hashes, err
+	}
 	// signatures over the general header alone
 	for _, tag := range headerSigTags {
 		sig, err := setupDigester(sigHeader, tag, knownKeys)
