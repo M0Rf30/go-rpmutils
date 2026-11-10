@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sassoftware/go-rpmutils/cpio"
+	"github.com/M0Rf30/go-rpmutils/cpio"
 )
 
 // Rpm is an open RPM header and payload

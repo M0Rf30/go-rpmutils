@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sassoftware/go-rpmutils/cpio"
+	"github.com/M0Rf30/go-rpmutils/cpio"
 )
 
 // TODO version 2:
