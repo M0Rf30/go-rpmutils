@@ -20,8 +20,8 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -170,10 +170,16 @@ func SignRpmStream(stream io.Reader, key *packet.PrivateKey, opts *SignatureOpti
 	if err != nil {
 		return nil, err
 	}
-	if genHeader.HasTag(RPMFORMAT) {
-		if format, err := genHeader.GetUint32s(RPMFORMAT); err == nil && len(format) == 1 && format[0] >= 6 {
-			return nil, errors.New("signing RPM v6 packages is not supported")
+	if isFormatV6(genHeader) {
+		if err := signV6(sigHeader, genHeader, stream, key, opts); err != nil {
+			return nil, err
 		}
+		return &RpmHeader{
+			lead:      lead,
+			sigHeader: sigHeader,
+			genHeader: genHeader,
+			isSource:  sigHeader.isSource,
+		}, nil
 	}
 	// hash and sign header
 	genHash, combinedHash, err := digestForSigning(sigHeader, genHeader, stream, opts)
@@ -196,6 +202,42 @@ func SignRpmStream(stream io.Reader, key *packet.PrivateKey, opts *SignatureOpti
 		genHeader: genHeader,
 		isSource:  sigHeader.isSource,
 	}, nil
+}
+
+// isFormatV6 reports whether the general header declares RPM package format 6
+// or later.
+func isFormatV6(genHeader *rpmHeader) bool {
+	format, err := genHeader.GetUint32s(RPMFORMAT)
+	return err == nil && len(format) == 1 && format[0] >= 6
+}
+
+// signV6 signs an RPM v6 package the way rpmsign 6 does: one OpenPGP
+// signature over the general header only, stored base64-encoded in the
+// OPENPGP signature tag. The payload is covered through the payload digests
+// of the (signed) header, which are checked here before signing. Existing
+// signatures are replaced; legacy v4 signature tags are dropped because rpm
+// ignores them once an OPENPGP signature is present.
+func signV6(sigHeader, genHeader *rpmHeader, payload io.Reader, key *packet.PrivateKey, opts *SignatureOptions) error {
+	if err := digestPayload(sigHeader, genHeader, payload, nil); err != nil {
+		return err
+	}
+	h := opts.hash().New()
+	h.Write(genHeader.orig)
+	sig, err := makeSignature(h, key, opts)
+	if err != nil {
+		return err
+	}
+	encoded := base64.StdEncoding.EncodeToString(sig)
+	sigHeader.entries[SIG_OPENPGP] = entry{
+		dataType: RPM_STRING_ARRAY_TYPE,
+		count:    1,
+		contents: append([]byte(encoded), 0),
+	}
+	delete(sigHeader.entries, SIG_RSA)
+	delete(sigHeader.entries, SIG_DSA)
+	delete(sigHeader.entries, SIG_PGP-_SIGHEADER_TAG_BASE)
+	delete(sigHeader.entries, SIG_GPG-_SIGHEADER_TAG_BASE)
+	return nil
 }
 
 func getPayloadDigest(header *rpmHeader) (string, crypto.Hash) {
