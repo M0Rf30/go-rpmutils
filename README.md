@@ -1,6 +1,6 @@
 # Go RPM Utils
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/sassoftware/go-rpmutils.svg)](https://pkg.go.dev/github.com/sassoftware/go-rpmutils)
+[![Go Reference](https://pkg.go.dev/badge/github.com/M0Rf30/go-rpmutils.svg)](https://pkg.go.dev/github.com/M0Rf30/go-rpmutils)
 
 go-rpmutils is a library written in [go](http://golang.org) for parsing and extracting content from [RPMs](http://www.rpm.org).
 
@@ -46,7 +46,7 @@ rpmutils supports validating PGP signatures embedded in RPM files.
 
 ```go
 import (
-    "github.com/sassoftware/go-rpmutils"
+    "github.com/M0Rf30/go-rpmutils"
     "github.com/ProtonMail/go-crypto/openpgp"
 )
 
