@@ -148,8 +148,21 @@ const (
 
 	ENCODING = 5062
 
-	PAYLOADDIGEST     = 5092
-	PAYLOADDIGESTALGO = 5093
+	// PAYLOADDIGEST is the digest of the compressed payload. In RPM v6 it is
+	// always SHA256 (the algorithm tag is omitted); also known as PAYLOADSHA256.
+	PAYLOADDIGEST      = 5092
+	PAYLOADDIGESTALGO  = 5093
+	PAYLOADSHA256ALT   = 5097 // SHA256 of the uncompressed payload
+	PAYLOADSIZE        = 5112 // compressed payload size (INT64)
+	PAYLOADSIZEALT     = 5113 // uncompressed payload size (INT64)
+	RPMFORMAT          = 5114 // package format version (INT32), absent in v4
+	FILEMIMEINDEX      = 5115
+	MIMEDICT           = 5116
+	SOURCENEVR         = 5120
+	PAYLOADSHA512      = 5121 // SHA512 of the compressed payload
+	PAYLOADSHA512ALT   = 5122 // SHA512 of the uncompressed payload
+	PAYLOADSHA3_256    = 5123 // SHA3-256 of the compressed payload
+	PAYLOADSHA3_256ALT = 5124 // SHA3-256 of the uncompressed payload
 )
 
 // RPM header tags found in the signature header
@@ -161,6 +174,9 @@ const (
 	SIG_LONGSIGSIZE     = SIG_BASE + 14 // header + compressed payload (uint64)
 	SIG_LONGARCHIVESIZE = SIG_BASE + 15 // uncompressed payload bytes (uint64)
 	SIG_SHA256          = SIG_BASE + 17 // SHA256 over header only (hex)
+	SIG_OPENPGP         = SIG_BASE + 22 // RPM v6: base64 OpenPGP signatures over header only (string array)
+	SIG_SHA3_256        = SIG_BASE + 23 // RPM v6: SHA3-256 over header only (hex)
+	SIG_RESERVED        = 999           // RPM v6: reserved space for signatures
 
 	// Given that there is overlap between signature tag headers and general tag
 	// headers, we offset the signature ones by some amount
