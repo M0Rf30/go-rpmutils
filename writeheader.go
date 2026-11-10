@@ -155,7 +155,16 @@ func (hdr *RpmHeader) DumpSignatureHeader(sameSize bool) ([]byte, error) {
 	}
 	sigh := hdr.sigHeader
 	regionTag := RPMTAG_HEADERSIGNATURES
+	reservedTag := SIG_RESERVEDSPACE - _SIGHEADER_TAG_BASE
+	if hdr.genHeader != nil && isFormatV6(hdr.genHeader) {
+		// v6 reserves space with its own tag (999), which must be the last
+		// one in the signature header, and every v6 package carries it:
+		// keep the original size even when sameSize is not requested.
+		reservedTag = SIG_RESERVED
+		sameSize = true
+	}
 	delete(sigh.entries, SIG_RESERVEDSPACE-_SIGHEADER_TAG_BASE)
+	delete(sigh.entries, SIG_RESERVED)
 	if sameSize {
 		needed, err := sigh.size(regionTag)
 		if err != nil {
@@ -165,7 +174,7 @@ func (hdr *RpmHeader) DumpSignatureHeader(sameSize bool) ([]byte, error) {
 		if needed+16 <= available {
 			// Fill unused space with a RESERVEDSPACE tag
 			padding := make([]byte, available-needed-16)
-			sigh.entries[SIG_RESERVEDSPACE-_SIGHEADER_TAG_BASE] = entry{
+			sigh.entries[reservedTag] = entry{
 				dataType: RPM_BIN_TYPE,
 				count:    int32(len(padding)),
 				contents: padding,
